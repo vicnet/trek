@@ -262,12 +262,9 @@ class Choices:
                     return pair
         return None
 
-
-class ScorePath:
+class Score:
     font = pygame.font.Font('freesansbold.ttf', 20)
-    points_rect = pygame.Rect((43, 500),(28,28))
     points_nb = 8
-    bonus_rect = pygame.Rect((289, 500),(28,28))
 
     def __init__(self, score_model):
         self.model = score_model
@@ -276,19 +273,33 @@ class ScorePath:
     def update(self):
         self.draw(display)
 
-    def draw_points(self, display, points):
-        rect = self.points_rect.copy()
+    def draw_value(self, display, rect, value):
+        display.blit(background, rect.topleft, rect)
+        text = self.font.render(str(value), True, BLACK)
+        text_rect = text.get_rect(center=rect.center)
+        display.blit(text, text_rect)
+
+    def draw_points(self, display, rects, points):
+        rect = rects.copy()
         for point in points:
-            display.blit(background, rect.topleft, rect)
-            text = self.font.render(str(point), True, BLACK)
-            text_rect = text.get_rect(center=rect.center)
-            display.blit(text, text_rect)
+            self.draw_value(display, rect, point)
             rect.move_ip(rect.width,0)
 
     def draw(self, display):
         points, bonus, total = self.model.score()
-        self.draw_points(display, points)
+        self.draw_points(display, self.points_rect, points)
+        self.draw_value(display, self.bonus_rect, bonus)
+        self.draw_value(display, self.total_rect, total)
 
+class ScorePath(Score):
+    points_rect = pygame.Rect((43, 500),(28,28))
+    bonus_rect = pygame.Rect((289, 500),(28,28))
+    total_rect = pygame.Rect((342, 500),(34,28))
+
+class ScoreMaps(Score):
+    points_rect = pygame.Rect((43, 546),(28,28))
+    bonus_rect = pygame.Rect((289, 546),(28,28))
+    total_rect = pygame.Rect((342, 546),(34,28))
 
 display = pygame.display.set_mode((592, 592))
 background = pygame.image.load("dunai.jpg").convert()
@@ -304,6 +315,7 @@ dices.draw(display)
 paths = Paths(model.game.paths, circles.circles)
 paths.draw(display)
 score_path = ScorePath(model.game.score_path)
+score_maps = ScoreMaps(model.game.score_maps)
 
 pygame.display.flip()
 

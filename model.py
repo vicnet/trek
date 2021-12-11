@@ -102,9 +102,15 @@ class Circle(EventSource):
             self.__value = None
         self.cnxs = []
         self.__mapped = False
-    
+
+    def __repr__(self):
+        return f'C{self.num}:{"/" if self.value is None else self.value}'
+
     def add_cnx(self, i):
         self.cnxs.append(i)
+        
+    def is_connected(self, i):
+        return i in self.cnxs
 
     def getvalue(self):
         return self.__value
@@ -209,15 +215,15 @@ class Score(EventSource):
             return Score.bonus_points[size-3]
         return 5*(size-4)
 
+    def update(self):
+        self.triggerEvent('update')
+
 
 class ScorePath(Score):
     def __init__(self, paths):
         super().__init__()
         self.paths = paths
         self.paths.subscribe('update', self.update)
-
-    def update(self):
-        self.triggerEvent('update')
 
     def score_for(self, path):
         path = path.path
@@ -233,6 +239,53 @@ class ScorePath(Score):
         return points, bonus, sum(points)+bonus
 
 
+class ScoreMap(Score):
+    def __init__(self, circles):
+        super().__init__()
+        self.circles = circles
+
+    def score(self):
+        maps = []
+        # check all circles
+        for circle in self.circles:
+            # check only circle with value
+            if circle.value is None:
+                continue
+            # check if a circle is linked to a map
+            first_map = None
+            for amap in maps:
+                if circle.value == amap['value']:
+                    # the circle could be in this map
+                    # check if connected to an other circle
+                    for other in amap['list']:
+                        if other.is_connected(circle.num):
+                            # it is connected, add or merge
+                            if first_map is None:
+                                # add to map if not in first one
+                                amap['list'].append(circle)
+                                first_map = amap
+                            else:
+                                # circle is in first and map => merge
+                                first_map['list'] += amap['list']
+                                maps.remove(amap)
+                            break
+            # check if circle should add
+            if first_map is None:
+                # not added yet, so create a new map
+                maps.append({ 'value': circle.value, 'list':[ circle ] })
+        points = []
+        max_size = 0
+        for amap in maps:
+            size = len(amap['list'])
+            if size<=1:
+                # keep only with min 2 circles
+                continue
+            points.append(amap['value']+size-1)
+            max_size = max(max_size, size)
+        bonus = self.bonus_for(max_size)
+        return points, bonus, sum(points)+bonus
+
+
 class Game:
     def __init__(self):
         super().__init__()
@@ -241,7 +294,8 @@ class Game:
         self.circles = Circles()
         self.paths = Paths()
         self.score_path = ScorePath(self.paths)
-
+        self.score_maps = ScoreMap(self.circles)
+        
         # current objects
         self.value = None
         self.circle = None
@@ -278,10 +332,13 @@ class Game:
                 if circle.value==self.value:
                     current.mapped = True
                     circle.mapped = True
+                    self.score_maps.update()
 
 game = Game()
 game.circles[15].value = 5
-game.circles[16].value = 6
-game.circles[0].value = 4
-game.circle = game.circles[0]
-game.paths.add(game.circles[15],game.circles[16])
+game.circles[16].value = 5
+game.circles[0].value = 5
+game.circles[8].value = 5
+#game.circle = game.circles[0]
+#game.paths.add(game.circles[15],game.circles[16])
+game.score_maps.score()
