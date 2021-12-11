@@ -9,17 +9,21 @@ import builder
 import model
 
 
+pygame.init()
+
 BLACK = pygame.Color('black')
 
 
 class Circle:
+    font = pygame.font.Font('freesansbold.ttf', 50)
+    debug = False
+
     def __init__(self, circle_model, center, radius):
         self.model = circle_model
         self.model.subscribe('update', self.update)
         self.center = center
         self.radius = radius
-        self.font = pygame.font.Font('freesansbold.ttf', 50)
-    
+
     def collide(self, p):
         sqx = (p[0] - self.center[0])**2
         sqy = (p[1] - self.center[1])**2
@@ -33,6 +37,12 @@ class Circle:
                 self.center[1] + self.radius*math.sin(a) )
 
     def draw(self, display):
+        if self.debug:
+            font2 = pygame.font.Font('freesansbold.ttf', 10)
+            text = font2.render(str(self.model.num), True, BLACK)
+            rect = text.get_rect(center=self.center)
+            rect.move_ip(self.radius*1/2,-self.radius*1/2)
+            display.blit(text, rect)
         if self.model.value is not None:
             text = self.font.render(str(self.model.value), True, BLACK)
             rect = text.get_rect(center=self.center)
@@ -92,8 +102,8 @@ class Path:
         count = len(path)
         if count<2: return
         for i in range(count-1):
-            c1 = self.circles[path[i]]
-            c2 = self.circles[path[i+1]]
+            c1 = self.circles[path[i].num]
+            c2 = self.circles[path[i+1].num]
             self.draw_path(display, c1, c2)
 
 class Paths:
@@ -102,6 +112,7 @@ class Paths:
         self.model.subscribe('update', self.update)
         self.circles = circles
         self.paths = []
+        self.update()
 
     def update(self):
         for mpath in self.model.paths[len(self.paths):]:
@@ -115,6 +126,7 @@ class Paths:
 
 
 class Dice:
+    font = pygame.font.Font('freesansbold.ttf', 64)
     def __init__(self, dice_model, pos, color=(255, 255, 255)):
         self.model = dice_model
         self.model.subscribe('update', self.update)
@@ -122,10 +134,9 @@ class Dice:
         self.rect.move_ip(pos)
         self.color = color
         self.values = {}
-        font = pygame.font.Font('freesansbold.ttf', 64)
         #font = pygame.font.SysFont('Comic Sans MS', 64, true)
         for value in range(self.model.min, self.model.max+1):
-            text = font.render(str(value), True, BLACK)
+            text = self.font.render(str(value), True, BLACK)
             self.values[value] = text
 
     def collide(self, p):
@@ -156,10 +167,10 @@ class Dices:
         self.red.draw(display)
 
 class Values:
+    font = pygame.font.Font('freesansbold.ttf', 20)
     def __init__(self, dices_model):
         self.model = dices_model
         self.model.subscribe('update', self.update)
-        self.font = pygame.font.Font('freesansbold.ttf', 20)
         self.positions = { }
         self.old_rect = { }
         pos = [410, 28]
@@ -251,19 +262,48 @@ class Choices:
                     return pair
         return None
 
-pygame.init()
+
+class ScorePath:
+    font = pygame.font.Font('freesansbold.ttf', 20)
+    points_rect = pygame.Rect((43, 500),(28,28))
+    points_nb = 8
+    bonus_rect = pygame.Rect((289, 500),(28,28))
+
+    def __init__(self, score_model):
+        self.model = score_model
+        self.model.subscribe('update', self.update)
+
+    def update(self):
+        self.draw(display)
+
+    def draw_points(self, display, points):
+        rect = self.points_rect.copy()
+        for point in points:
+            display.blit(background, rect.topleft, rect)
+            text = self.font.render(str(point), True, BLACK)
+            text_rect = text.get_rect(center=rect.center)
+            display.blit(text, text_rect)
+            rect.move_ip(rect.width,0)
+
+    def draw(self, display):
+        points, bonus, total = self.model.score()
+        self.draw_points(display, points)
+
 
 display = pygame.display.set_mode((592, 592))
 background = pygame.image.load("dunai.jpg").convert()
 display.blit(background, (0,0))
 
 circles = Circles(model.game.circles)
+circles.draw(display)
 values = Values(model.game.dices)
 values.draw(display)
 choices = Choices(model.game.choices)
 dices = Dices(model.game.dices.yellow)
 dices.draw(display)
 paths = Paths(model.game.paths, circles.circles)
+paths.draw(display)
+score_path = ScorePath(model.game.score_path)
 
 pygame.display.flip()
 

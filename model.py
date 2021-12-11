@@ -1,6 +1,5 @@
 import random
 from enum import IntEnum
-from collections import namedtuple
 
 import builder
 
@@ -93,13 +92,12 @@ class Choices(EventSource):
 debug = False
 
 class Circle(EventSource):
-    cpt = 0
-    def __init__(self):
+    def __init__(self, num):
         global debug
         super().__init__()
+        self.num = num
         if debug:
-            self.__value = Circle.cpt
-            Circle.cpt += 1
+            self.__value = num
         else:
             self.__value = None
         self.cnxs = []
@@ -132,42 +130,108 @@ class Circles:
         super().__init__()
         circles = builder.get_circles('dunai.jpg')
         cnxs = builder.get_connections(circles)
-        self.circles = [Circle() for _ in range(len(circles))]
+        self.circles = [Circle(i) for i in range(len(circles))]
         for i,j in cnxs:
              self.circles[i].add_cnx(j)
 
     def __getitem__(self, i):
         return self.circles[i]
 
-class Path(EventSource):
-    def __init__(self, path):
-        super().__init__()
-        self.path = path
-        
-    def exists(self, num):
-        return num in self.path
 
-    def add(self, new, num):
-        self.path.append(new)
+class Path(EventSource):
+    def __init__(self, *path):
+        super().__init__()
+        self.path = [ *path ]
+        self.sort()
+
+    def sort(self):
+        self.path.sort(key=lambda circle: circle.value)
+
+    def exists(self, circle):
+        return circle in self.path
+
+    def add(self, new_circle, circle):
+        self.path.append(new_circle)
+        self.sort()
         self.triggerEvent('update')
+
+    def merge(self, path):
+        self.path += path.path
+        self.sort()
+        self.triggerEvent('update')
+
 
 class Paths(EventSource):
     def __init__(self):
         super().__init__()
         self.paths = []
 
-    def add(self, new, num):
-        """
-        Add new-num path, new if the new added circle.
-        num could be an existing or a new.
-        """
+    def exists(self, circle):
         for path in self.paths:
-            if path.exists(num):
-                path.add(new, num)
+            if path.exists(circle):
+                return path
+        return None
+
+    def add(self, new_circle, circle):
+        """
+        Add path on 2 circles, new if the new added circle.
+        'circle' could be an existing or a new.
+        """
+        existing = self.exists(new_circle)
+        for path in self.paths:
+            if path.exists(circle):
+                if existing is None:
+                    path.add(new_circle, circle)
+                else:
+                    existing.merge(path)
+                    self.paths.remove(path)
+                self.triggerEvent('update')
                 return
-        path = Path([new, num])
-        self.paths.append(path)
+        if existing is not None:
+            path = Path(circle)
+            existing.merge(path)
+        else:
+            path = Path(new_circle, circle)
+            self.paths.append(path)
         self.triggerEvent('update')
+
+
+class Score(EventSource):
+    bonus_points = [1,3,6]
+    
+    def __init__(self):
+        super().__init__()
+
+    def bonus_for(self, size):
+        if size<3:
+            return 0
+        if size<6:
+            return Score.bonus_points[size-3]
+        return 5*(size-4)
+
+
+class ScorePath(Score):
+    def __init__(self, paths):
+        super().__init__()
+        self.paths = paths
+        self.paths.subscribe('update', self.update)
+
+    def update(self):
+        self.triggerEvent('update')
+
+    def score_for(self, path):
+        path = path.path
+        if path[-1].value is None:
+            return None
+        return path[-1].value+len(path)-1, len(path)
+
+    def score(self):
+        points_sizes = [ self.score_for(path) for path in self.paths.paths ]
+        points,sizes = list(zip(*points_sizes))
+        max_size = max(sizes)
+        bonus = self.bonus_for(max_size)
+        return points, bonus, sum(points)+bonus
+
 
 class Game:
     def __init__(self):
@@ -176,6 +240,7 @@ class Game:
         self.choices = Choices()
         self.circles = Circles()
         self.paths = Paths()
+        self.score_path = ScorePath(self.paths)
 
         # current objects
         self.value = None
@@ -192,27 +257,31 @@ class Game:
         self.choices.check(pair)
         self.value = self.dices.value(pair)
         self.update()
-
+        
     def choose(self, num):
         if self.circle is None:
-            NumCircle = namedtuple("NumCircle", ["num","circle"])
-            self.circle = NumCircle(num, self.circles[num])
+            self.circle = self.circles[num]
             self.update()
         else:
             current = self.circle
-            self.paths.add(current.num, num)
+            self.paths.add(current, self.circles[num])
 
     def update(self):
         if self.value is None: return
         if self.circle is None: return
         current = self.circle
-        current.circle.value = self.value
+        current.value = self.value
         # check mapping if not already done
-        if not current.circle.mapped:
-            for num in current.circle.cnxs:
+        if not current.mapped:
+            for num in current.cnxs:
                 circle = self.circles[num]
                 if circle.value==self.value:
-                    current.circle.mapped = True
+                    current.mapped = True
                     circle.mapped = True
 
 game = Game()
+game.circles[15].value = 5
+game.circles[16].value = 6
+game.circles[0].value = 4
+game.circle = game.circles[0]
+game.paths.add(game.circles[15],game.circles[16])
